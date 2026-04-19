@@ -1,5 +1,4 @@
 // tree.c — Tree object serialization and construction
-// Binary format per entry: "<mode-octal> <name>\0<32-byte-hash>"
 #include "tree.h"
 #include "index.h"
 #include <stdio.h>
@@ -20,38 +19,30 @@ uint32_t get_file_mode(const char *path) {
     return MODE_FILE;
 }
 
-// Parse binary tree data into a Tree struct safely.
 int tree_parse(const void *data, size_t len, Tree *tree_out) {
     tree_out->count = 0;
     const uint8_t *ptr = (const uint8_t *)data;
     const uint8_t *end = ptr + len;
-
     while (ptr < end && tree_out->count < MAX_TREE_ENTRIES) {
         TreeEntry *entry = &tree_out->entries[tree_out->count];
-
         const uint8_t *space = memchr(ptr, ' ', end - ptr);
         if (!space) return -1;
-
         char mode_str[16] = {0};
         size_t mode_len = space - ptr;
         if (mode_len >= sizeof(mode_str)) return -1;
         memcpy(mode_str, ptr, mode_len);
         entry->mode = strtol(mode_str, NULL, 8);
         ptr = space + 1;
-
         const uint8_t *null_byte = memchr(ptr, '\0', end - ptr);
         if (!null_byte) return -1;
-
         size_t name_len = null_byte - ptr;
         if (name_len >= sizeof(entry->name)) return -1;
         memcpy(entry->name, ptr, name_len);
         entry->name[name_len] = '\0';
         ptr = null_byte + 1;
-
         if (ptr + HASH_SIZE > end) return -1;
         memcpy(entry->hash.hash, ptr, HASH_SIZE);
         ptr += HASH_SIZE;
-
         tree_out->count++;
     }
     return 0;
@@ -61,10 +52,27 @@ static int compare_tree_entries(const void *a, const void *b) {
     return strcmp(((const TreeEntry *)a)->name, ((const TreeEntry *)b)->name);
 }
 
-// TODO: tree_serialize
+// Serialize Tree struct to binary. Sorts entries by name for determinism.
+// Caller must free(*data_out).
 int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
-    (void)tree; (void)data_out; (void)len_out;
-    return -1;
+    size_t max_size = tree->count * 296;
+    uint8_t *buffer = malloc(max_size);
+    if (!buffer) return -1;
+
+    Tree sorted = *tree;
+    qsort(sorted.entries, sorted.count, sizeof(TreeEntry), compare_tree_entries);
+
+    size_t offset = 0;
+    for (int i = 0; i < sorted.count; i++) {
+        const TreeEntry *e = &sorted.entries[i];
+        int written = sprintf((char *)buffer + offset, "%o %s", e->mode, e->name);
+        offset += written + 1; // +1 includes the null terminator from sprintf
+        memcpy(buffer + offset, e->hash.hash, HASH_SIZE);
+        offset += HASH_SIZE;
+    }
+    *data_out = buffer;
+    *len_out  = offset;
+    return 0;
 }
 
 // Forward declarations
