@@ -131,8 +131,9 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 //
 // Returns 0 on success, -1 on error.
 static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID *id_out) {
-    Tree tree;
-    tree.count = 0;
+    Tree *tree = malloc(sizeof(Tree));
+    if (!tree) return -1;
+    tree->count = 0;
 
     int i = 0;
     while (i < count) {
@@ -160,8 +161,8 @@ static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID
 
         if (!slash) {
             // It's a file at this directory level — add it directly as a blob entry
-            if (tree.count >= MAX_TREE_ENTRIES) return -1;
-            TreeEntry *te = &tree.entries[tree.count++];
+            if (tree->count >= MAX_TREE_ENTRIES) { free(tree); return -1; }
+            TreeEntry *te = &tree->entries[tree->count++];
             te->mode = e->mode;
             te->hash = e->hash;
             strncpy(te->name, component, sizeof(te->name) - 1);
@@ -196,11 +197,14 @@ static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID
 
             // Recursively build the subtree for entries[i..j-1]
             ObjectID sub_id;
-            if (write_tree_level(entries + i, j - i, depth + 1, &sub_id) != 0) return -1;
+            if (write_tree_level(entries + i, j - i, depth + 1, &sub_id) != 0) {
+                free(tree);
+                return -1;
+            }
 
             // Add a tree entry for this subdirectory
-            if (tree.count >= MAX_TREE_ENTRIES) return -1;
-            TreeEntry *te = &tree.entries[tree.count++];
+            if (tree->count >= MAX_TREE_ENTRIES) { free(tree); return -1; }
+            TreeEntry *te = &tree->entries[tree->count++];
             te->mode = MODE_DIR;
             te->hash = sub_id;
             strncpy(te->name, dir_name, sizeof(te->name) - 1);
@@ -213,10 +217,14 @@ static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID
     // Serialize this tree and write it to the object store
     void *tree_data;
     size_t tree_len;
-    if (tree_serialize(&tree, &tree_data, &tree_len) != 0) return -1;
+    if (tree_serialize(tree, &tree_data, &tree_len) != 0) {
+        free(tree);
+        return -1;
+    }
 
     int rc = object_write(OBJ_TREE, tree_data, tree_len, id_out);
     free(tree_data);
+    free(tree);
     return rc;
 }
 
@@ -225,26 +233,37 @@ static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID
 //
 // Returns 0 on success, -1 on error.
 int tree_from_index(ObjectID *id_out) {
-    Index index;
-    if (index_load(&index) != 0) return -1;
+    Index *index = malloc(sizeof(Index));
+    if (!index) return -1;
 
-    if (index.count == 0) {
+    if (index_load(index) != 0) {
+        free(index);
+        return -1;
+    }
+
+    if (index->count == 0) {
         // Empty index — write an empty tree
         Tree empty;
         empty.count = 0;
         void *data;
         size_t len;
-        if (tree_serialize(&empty, &data, &len) != 0) return -1;
+        if (tree_serialize(&empty, &data, &len) != 0) {
+            free(index);
+            return -1;
+        }
         int rc = object_write(OBJ_TREE, data, len, id_out);
         free(data);
+        free(index);
         return rc;
     }
 
     // Build an array of pointers to entries (already sorted by path in index)
     IndexEntry *entry_ptrs[MAX_INDEX_ENTRIES];
-    for (int i = 0; i < index.count; i++) {
-        entry_ptrs[i] = &index.entries[i];
+    for (int i = 0; i < index->count; i++) {
+        entry_ptrs[i] = &index->entries[i];
     }
 
-    return write_tree_level(entry_ptrs, index.count, 0, id_out);
+    int rc = write_tree_level(entry_ptrs, index->count, 0, id_out);
+    free(index);
+    return rc;
 }

@@ -24,6 +24,9 @@
 #include <unistd.h>
 #include <dirent.h>
 
+// Forward declarations
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
 // Find an index entry by path (linear scan).
@@ -185,18 +188,21 @@ int index_load(Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // Sort a mutable copy of the entries by path
-    Index sorted = *index;
-    qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_index_entries);
+    // Move sorted copy to the heap to avoid 5.6MB stack allocation
+    Index *sorted = malloc(sizeof(Index));
+    if (!sorted) return -1;
+    memcpy(sorted, index, sizeof(Index));
+
+    qsort(sorted->entries, sorted->count, sizeof(IndexEntry), compare_index_entries);
 
     // Write to a temp file first
     char tmp_path[] = INDEX_FILE ".tmp";
     FILE *f = fopen(tmp_path, "w");
-    if (!f) return -1;
+    if (!f) { free(sorted); return -1; }
 
     char hex[HASH_HEX_SIZE + 1];
-    for (int i = 0; i < sorted.count; i++) {
-        const IndexEntry *e = &sorted.entries[i];
+    for (int i = 0; i < sorted->count; i++) {
+        const IndexEntry *e = &sorted->entries[i];
         hash_to_hex(&e->hash, hex);
         fprintf(f, "%o %s %llu %u %s\n",
                 e->mode,
@@ -207,9 +213,10 @@ int index_save(const Index *index) {
     }
 
     // Flush userspace buffer then sync to disk
-    if (fflush(f) != 0) { fclose(f); unlink(tmp_path); return -1; }
-    if (fsync(fileno(f)) != 0) { fclose(f); unlink(tmp_path); return -1; }
+    if (fflush(f) != 0) { fclose(f); unlink(tmp_path); free(sorted); return -1; }
+    if (fsync(fileno(f)) != 0) { fclose(f); unlink(tmp_path); free(sorted); return -1; }
     fclose(f);
+    free(sorted);
 
     // Atomically replace the old index
     if (rename(tmp_path, INDEX_FILE) != 0) {

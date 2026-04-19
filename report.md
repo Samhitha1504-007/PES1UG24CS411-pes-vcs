@@ -22,11 +22,11 @@
 
 > **📸 Screenshot 1A:** `./test_objects` output showing all tests passing.
 
-*(Add screenshot here)*
+![Screenshot 1A](./screenshots/1A.png)
 
 > **📸 Screenshot 1B:** `find .pes/objects -type f` showing the sharded directory structure.
 
-*(Add screenshot here)*
+![Screenshot 1B](./screenshots/1B.png)
 
 ---
 
@@ -34,11 +34,11 @@
 
 > **📸 Screenshot 2A:** `./test_tree` output showing all tests passing.
 
-*(Add screenshot here)*
+![Screenshot 2A](./screenshots/2A.png)
 
 > **📸 Screenshot 2B:** `xxd` of a raw tree object (first 20 lines).
 
-*(Add screenshot here)*
+![Screenshot 2B](./screenshots/2B.png)
 
 ---
 
@@ -46,11 +46,11 @@
 
 > **📸 Screenshot 3A:** `./pes init`, `./pes add file1.txt file2.txt`, `./pes status` sequence.
 
-*(Add screenshot here)*
+![Screenshot 3A](./screenshots/3A.png)
 
 > **📸 Screenshot 3B:** `cat .pes/index` showing the text-format index with entries.
 
-*(Add screenshot here)*
+![Screenshot 3B](./screenshots/3B.png)
 
 ---
 
@@ -58,15 +58,15 @@
 
 > **📸 Screenshot 4A:** `./pes log` output showing three commits with hashes, authors, timestamps, and messages.
 
-*(Add screenshot here)*
+![Screenshot 4A](./screenshots/4A.png)
 
 > **📸 Screenshot 4B:** `find .pes -type f | sort` showing object store growth after three commits.
 
-*(Add screenshot here)*
+![Screenshot 4B](./screenshots/4B.png)
 
 > **📸 Screenshot 4C:** `cat .pes/refs/heads/main` and `cat .pes/HEAD` showing the reference chain.
 
-*(Add screenshot here)*
+![Screenshot 4C](./screenshots/4C.png)
 
 ---
 
@@ -74,7 +74,7 @@
 
 > **📸 Screenshot:** `make test-integration` output showing the full integration test passing.
 
-*(Add screenshot here)*
+![Final Integration Test](./screenshots/Final.png)
 
 ---
 
