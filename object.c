@@ -45,8 +45,7 @@ int object_exists(const ObjectID *id) {
     return access(path, F_OK) == 0;
 }
 
-// object_write: Step 1 — build header and compute hash
-// Format: "<type> <size>\0<data>"
+// object_write: Steps 1-3 — hash, deduplication, shard directory creation
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
     const char *type_str;
     switch (type) {
@@ -55,7 +54,6 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         case OBJ_COMMIT: type_str = "commit"; break;
         default: return -1;
     }
-    // Build full object: header + null byte + data
     char header[64];
     int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len);
     size_t full_len = (size_t)header_len + 1 + len;
@@ -66,13 +64,26 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     full[header_len] = '\0';
     memcpy(full + header_len + 1, data, len);
 
-    // Compute SHA-256 of the complete object
     ObjectID id;
     compute_hash(full, full_len, &id);
     if (id_out) *id_out = id;
 
+    // Deduplication: if object already stored, skip writing
+    if (object_exists(&id)) {
+        free(full);
+        return 0;
+    }
+
+    // Directory sharding: first 2 hex chars = shard dir
+    // .pes/objects/a1/b2c3d4...
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(&id, hex);
+    char shard_dir[512];
+    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+    mkdir(shard_dir, 0755); // no-op if already exists
+
     free(full);
-    return 0; // hash computed but not written yet
+    return 0; // directory created but file not written yet
 }
 
 // TODO: implement object_read
