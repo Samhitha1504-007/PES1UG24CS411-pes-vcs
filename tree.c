@@ -52,21 +52,17 @@ static int compare_tree_entries(const void *a, const void *b) {
     return strcmp(((const TreeEntry *)a)->name, ((const TreeEntry *)b)->name);
 }
 
-// Serialize Tree struct to binary. Sorts entries by name for determinism.
-// Caller must free(*data_out).
 int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
     size_t max_size = tree->count * 296;
     uint8_t *buffer = malloc(max_size);
     if (!buffer) return -1;
-
     Tree sorted = *tree;
     qsort(sorted.entries, sorted.count, sizeof(TreeEntry), compare_tree_entries);
-
     size_t offset = 0;
     for (int i = 0; i < sorted.count; i++) {
         const TreeEntry *e = &sorted.entries[i];
         int written = sprintf((char *)buffer + offset, "%o %s", e->mode, e->name);
-        offset += written + 1; // +1 includes the null terminator from sprintf
+        offset += written + 1;
         memcpy(buffer + offset, e->hash.hash, HASH_SIZE);
         offset += HASH_SIZE;
     }
@@ -79,8 +75,33 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 int index_load(Index *index);
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
-// TODO: tree_from_index
+// Recursive tree builder skeleton:
+// - entries: slice of sorted IndexEntry pointers at this directory level
+// - depth:   how many path components deep we are (0 = repo root)
+// - id_out:  receives the written tree object's hash
+static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID *id_out);
+
+// Entry point: load index, build tree, return root hash
 int tree_from_index(ObjectID *id_out) {
-    (void)id_out;
+    Index index;
+    if (index_load(&index) != 0) return -1;
+
+    if (index.count == 0) {
+        Tree empty; empty.count = 0;
+        void *data; size_t len;
+        if (tree_serialize(&empty, &data, &len) != 0) return -1;
+        int rc = object_write(OBJ_TREE, data, len, id_out);
+        free(data);
+        return rc;
+    }
+
+    IndexEntry *ptrs[MAX_INDEX_ENTRIES];
+    for (int i = 0; i < index.count; i++) ptrs[i] = &index.entries[i];
+    return write_tree_level(ptrs, index.count, 0, id_out);
+}
+
+// TODO: implement write_tree_level
+static int write_tree_level(IndexEntry **entries, int count, int depth, ObjectID *id_out) {
+    (void)entries; (void)count; (void)depth; (void)id_out;
     return -1;
 }
