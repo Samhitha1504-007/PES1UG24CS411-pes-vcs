@@ -45,7 +45,7 @@ int object_exists(const ObjectID *id) {
     return access(path, F_OK) == 0;
 }
 
-// object_write: Steps 1-3 — hash, deduplication, shard directory creation
+// object_write: Complete — atomic write using temp file + rename
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
     const char *type_str;
     switch (type) {
@@ -68,22 +68,45 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     compute_hash(full, full_len, &id);
     if (id_out) *id_out = id;
 
-    // Deduplication: if object already stored, skip writing
     if (object_exists(&id)) {
         free(full);
         return 0;
     }
 
-    // Directory sharding: first 2 hex chars = shard dir
-    // .pes/objects/a1/b2c3d4...
     char hex[HASH_HEX_SIZE + 1];
     hash_to_hex(&id, hex);
     char shard_dir[512];
     snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
-    mkdir(shard_dir, 0755); // no-op if already exists
+    mkdir(shard_dir, 0755);
 
+    char obj_path[512];
+    snprintf(obj_path, sizeof(obj_path), "%s/%.2s/%s", OBJECTS_DIR, hex, hex + 2);
+
+    // Atomic write: write to .tmp file, fsync, then rename to final path
+    // rename() is atomic on POSIX — readers never see a partial file
+    char tmp_path[520];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/%.2s/.tmp_XXXXXX", OBJECTS_DIR, hex);
+    int fd = mkstemp(tmp_path);
+    if (fd < 0) { free(full); return -1; }
+
+    ssize_t written = write(fd, full, full_len);
     free(full);
-    return 0; // directory created but file not written yet
+    if (written < 0 || (size_t)written != full_len) {
+        close(fd); unlink(tmp_path); return -1;
+    }
+
+    fsync(fd); // Flush to disk before rename
+    close(fd);
+
+    if (rename(tmp_path, obj_path) != 0) {
+        unlink(tmp_path); return -1;
+    }
+
+    // fsync the shard directory to persist the new directory entry
+    int dir_fd = open(shard_dir, O_RDONLY);
+    if (dir_fd >= 0) { fsync(dir_fd); close(dir_fd); }
+
+    return 0;
 }
 
 // TODO: implement object_read
