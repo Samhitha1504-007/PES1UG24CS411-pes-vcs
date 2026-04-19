@@ -33,9 +33,7 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     commit_out->timestamp = (uint64_t)strtoull(last_space+1, NULL, 10);
     *last_space = '\0';
     snprintf(commit_out->author, sizeof(commit_out->author), "%s", author_buf);
-    p = strchr(p, '\n') + 1;
-    p = strchr(p, '\n') + 1;
-    p = strchr(p, '\n') + 1;
+    p = strchr(p, '\n') + 1; p = strchr(p, '\n') + 1; p = strchr(p, '\n') + 1;
     snprintf(commit_out->message, sizeof(commit_out->message), "%s", p);
     return 0;
 }
@@ -51,14 +49,10 @@ int commit_serialize(const Commit *commit, void **data_out, size_t *len_out) {
     }
     n += snprintf(buf+n, sizeof(buf)-n,
         "author %s %" PRIu64 "\ncommitter %s %" PRIu64 "\n\n%s",
-        commit->author, commit->timestamp,
-        commit->author, commit->timestamp,
+        commit->author, commit->timestamp, commit->author, commit->timestamp,
         commit->message);
-    *data_out = malloc(n+1);
-    if (!*data_out) return -1;
-    memcpy(*data_out, buf, n+1);
-    *len_out = (size_t)n;
-    return 0;
+    *data_out = malloc(n+1); if (!*data_out) return -1;
+    memcpy(*data_out, buf, n+1); *len_out = (size_t)n; return 0;
 }
 
 int commit_walk(commit_walk_fn callback, void *ctx) {
@@ -76,7 +70,46 @@ int commit_walk(commit_walk_fn callback, void *ctx) {
     return 0;
 }
 
-// TODO: head_read / head_update / commit_create
-int head_read(ObjectID *id_out) { (void)id_out; return -1; }
-int head_update(const ObjectID *c) { (void)c; return -1; }
+// head_read: resolve HEAD -> branch ref -> commit hash
+int head_read(ObjectID *id_out) {
+    FILE *f = fopen(HEAD_FILE, "r"); if (!f) return -1;
+    char line[512];
+    if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
+    fclose(f);
+    line[strcspn(line, "\r\n")] = '\0';
+
+    char ref_path[512];
+    if (strncmp(line, "ref: ", 5) == 0) {
+        snprintf(ref_path, sizeof(ref_path), "%s/%s", PES_DIR, line+5);
+        f = fopen(ref_path, "r"); if (!f) return -1;
+        if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
+        fclose(f);
+        line[strcspn(line, "\r\n")] = '\0';
+    }
+    return hex_to_hash(line, id_out);
+}
+
+// head_update: atomically move branch pointer to new commit
+int head_update(const ObjectID *new_commit) {
+    FILE *f = fopen(HEAD_FILE, "r"); if (!f) return -1;
+    char line[512];
+    if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
+    fclose(f);
+    line[strcspn(line, "\r\n")] = '\0';
+
+    char target[520];
+    if (strncmp(line, "ref: ", 5) == 0)
+        snprintf(target, sizeof(target), "%s/%s", PES_DIR, line+5);
+    else
+        snprintf(target, sizeof(target), "%s", HEAD_FILE);
+
+    char tmp[528]; snprintf(tmp, sizeof(tmp), "%s.tmp", target);
+    f = fopen(tmp, "w"); if (!f) return -1;
+    char hex[HASH_HEX_SIZE+1]; hash_to_hex(new_commit, hex);
+    fprintf(f, "%s\n", hex);
+    fflush(f); fsync(fileno(f)); fclose(f);
+    return rename(tmp, target);
+}
+
+// TODO: commit_create
 int commit_create(const char *msg, ObjectID *out) { (void)msg; (void)out; return -1; }
