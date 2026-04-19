@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <dirent.h>
 
-// PROVIDED: index_find
 IndexEntry* index_find(Index *index, const char *path) {
     for (int i = 0; i < index->count; i++)
         if (strcmp(index->entries[i].path, path) == 0)
@@ -17,7 +16,6 @@ IndexEntry* index_find(Index *index, const char *path) {
     return NULL;
 }
 
-// PROVIDED: index_remove
 int index_remove(Index *index, const char *path) {
     for (int i = 0; i < index->count; i++) {
         if (strcmp(index->entries[i].path, path) == 0) {
@@ -33,7 +31,6 @@ int index_remove(Index *index, const char *path) {
     return -1;
 }
 
-// PROVIDED: index_status
 int index_status(const Index *index) {
     printf("Staged changes:\n");
     int staged = 0;
@@ -42,7 +39,6 @@ int index_status(const Index *index) {
     }
     if (!staged) printf("  (nothing to show)\n");
     printf("\n");
-
     printf("Unstaged changes:\n");
     int unstaged = 0;
     for (int i = 0; i < index->count; i++) {
@@ -56,7 +52,6 @@ int index_status(const Index *index) {
     }
     if (!unstaged) printf("  (nothing to show)\n");
     printf("\n");
-
     printf("Untracked files:\n");
     int untracked = 0;
     DIR *dir = opendir(".");
@@ -82,9 +77,35 @@ int index_status(const Index *index) {
     return 0;
 }
 
-// TODO: index_load
+// Load the index from .pes/index text file into memory.
+// Missing file is not an error - repo may have no staged files yet.
 int index_load(Index *index) {
-    (void)index; return -1;
+    index->count = 0;
+    FILE *f = fopen(INDEX_FILE, "r");
+    if (!f) return 0; // No index yet: start empty
+
+    char hex[HASH_HEX_SIZE + 4];
+    char path[512];
+    uint32_t mode, size;
+    uint64_t mtime;
+
+    while (index->count < MAX_INDEX_ENTRIES) {
+        int ret = fscanf(f, "%o %64s %llu %u %511s\n",
+                         &mode, hex, (unsigned long long *)&mtime, &size, path);
+        if (ret == EOF) break;
+        if (ret != 5) { int c; while ((c=fgetc(f)) != '\n' && c != EOF); continue; }
+
+        IndexEntry *e = &index->entries[index->count];
+        e->mode = mode;
+        if (hex_to_hash(hex, &e->hash) != 0) continue;
+        e->mtime_sec = mtime;
+        e->size = size;
+        strncpy(e->path, path, sizeof(e->path)-1);
+        e->path[sizeof(e->path)-1] = '\0';
+        index->count++;
+    }
+    fclose(f);
+    return 0;
 }
 
 // TODO: index_save
