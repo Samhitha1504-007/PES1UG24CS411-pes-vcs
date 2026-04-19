@@ -1,4 +1,4 @@
-// object.c — Content-addressable object store (skeleton)
+// object.c — Content-addressable object store
 #include "pes.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,10 +45,34 @@ int object_exists(const ObjectID *id) {
     return access(path, F_OK) == 0;
 }
 
-// TODO: implement object_write
+// object_write: Step 1 — build header and compute hash
+// Format: "<type> <size>\0<data>"
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    (void)type; (void)data; (void)len; (void)id_out;
-    return -1;
+    const char *type_str;
+    switch (type) {
+        case OBJ_BLOB:   type_str = "blob";   break;
+        case OBJ_TREE:   type_str = "tree";   break;
+        case OBJ_COMMIT: type_str = "commit"; break;
+        default: return -1;
+    }
+    // Build full object: header + null byte + data
+    char header[64];
+    int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len);
+    size_t full_len = (size_t)header_len + 1 + len;
+
+    uint8_t *full = malloc(full_len);
+    if (!full) return -1;
+    memcpy(full, header, (size_t)header_len);
+    full[header_len] = '\0';
+    memcpy(full + header_len + 1, data, len);
+
+    // Compute SHA-256 of the complete object
+    ObjectID id;
+    compute_hash(full, full_len, &id);
+    if (id_out) *id_out = id;
+
+    free(full);
+    return 0; // hash computed but not written yet
 }
 
 // TODO: implement object_read
